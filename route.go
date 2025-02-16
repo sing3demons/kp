@@ -1,34 +1,25 @@
 package kp
 
 import (
-	"context"
-	"errors"
-	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
 type httpApplication struct {
 	mux         *http.ServeMux
 	middlewares []Middleware
-	cfg         Config
+	cfg         *Config
+	log         ILogger
 }
 
-func newServer(cfg Config) IApplication {
+func newServer(cfg *Config, log ILogger) IRouter {
 	app := http.NewServeMux()
 
 	return &httpApplication{
 		mux: app,
 		cfg: cfg,
+		log: log,
 	}
-}
-
-func (app *httpApplication) Consume(topic string, h ServiceHandleFunc) error {
-	c := newConsumer(app.cfg)
-	return c.Consume(topic, h)
 }
 
 func (app *httpApplication) Use(middlewares ...Middleware) {
@@ -37,35 +28,35 @@ func (app *httpApplication) Use(middlewares ...Middleware) {
 
 func (app *httpApplication) Get(path string, handler HandleFunc, middlewares ...Middleware) {
 	app.mux.HandleFunc(http.MethodGet+" "+path, func(w http.ResponseWriter, r *http.Request) {
-		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, setParam(path, r), &app.cfg.KafkaConfig))
+		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, setParam(path, r), &app.cfg.KafkaConfig, app.log))
 	})
 }
 
 func (app *httpApplication) Post(path string, handler HandleFunc, middlewares ...Middleware) {
 	app.mux.HandleFunc(http.MethodPost+" "+path, func(w http.ResponseWriter, r *http.Request) {
-		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, setParam(path, r), &app.cfg.KafkaConfig))
+		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, r, &app.cfg.KafkaConfig, app.log))
 	})
 }
 
 func (app *httpApplication) Put(path string, handler HandleFunc, middlewares ...Middleware) {
 	app.mux.HandleFunc(http.MethodPut+" "+path, func(w http.ResponseWriter, r *http.Request) {
-		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, setParam(path, r), &app.cfg.KafkaConfig))
+		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, r, &app.cfg.KafkaConfig, app.log))
 	})
 }
 
 func (app *httpApplication) Delete(path string, handler HandleFunc, middlewares ...Middleware) {
 	app.mux.HandleFunc(http.MethodDelete+" "+path, func(w http.ResponseWriter, r *http.Request) {
-		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, setParam(path, r), &app.cfg.KafkaConfig))
+		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, r, &app.cfg.KafkaConfig, app.log))
 	})
 }
 
 func (app *httpApplication) Patch(path string, handler HandleFunc, middlewares ...Middleware) {
 	app.mux.HandleFunc(http.MethodPatch+" "+path, func(w http.ResponseWriter, r *http.Request) {
-		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, setParam(path, r), &app.cfg.KafkaConfig))
+		preHandle(handler, preMiddleware(app.middlewares, middlewares)...)(newMuxContext(w, r, &app.cfg.KafkaConfig, app.log))
 	})
 }
 
-func (app *httpApplication) Start() {
+func (app *httpApplication) Register() *http.Server {
 	server := http.Server{
 		Handler:      app.mux,
 		Addr:         ":" + app.cfg.AppConfig.Port,
@@ -73,56 +64,34 @@ func (app *httpApplication) Start() {
 		ReadTimeout:  time.Second * 10,
 	}
 
-	shutdown := make(chan error)
+	return &server
 
-	go func() {
-		quit := make(chan os.Signal, 1)
+	// shutdown := make(chan error)
 
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		<-quit
+	// go func() {
+	// 	quit := make(chan os.Signal, 1)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
+	// 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	// 	<-quit
 
-		log.Printf("Shutdown server: %s\n", server.Addr)
-		shutdown <- server.Shutdown(ctx)
-	}()
+	// 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// 	defer cancel()
 
-	osQuit := make(chan os.Signal, 1)
-	app.cfg.exitChannel = make(chan bool, 1)
-	signal.Notify(osQuit, syscall.SIGTERM, syscall.SIGINT)
-	exit := false
-	for {
-		if exit {
-			break
-		}
-		select {
-		case <-osQuit:
-			// Exit from HTTP as well
-			// if exitHTTP != nil {
-			// 	exitHTTP <- true
-			// }
-			exit = true
-		case <-app.cfg.exitChannel:
-			// Exit from HTTP as well
-			// if exitHTTP != nil {
-			// 	exitHTTP <- true
-			// }
-			exit = true
-		}
-	}
+	// 	log.Printf("Shutdown server: %s\n", server.Addr)
+	// 	shutdown <- server.Shutdown(ctx)
+	// }()
 
-	log.Printf("Start server: %s\n", server.Addr)
-	err := server.ListenAndServe()
-	if !errors.Is(err, http.ErrServerClosed) {
-		shutdown <- err
-		log.Fatal(err)
-	}
+	// log.Printf("Start server: %s\n", server.Addr)
+	// err := server.ListenAndServe()
+	// if !errors.Is(err, http.ErrServerClosed) {
+	// 	shutdown <- err
+	// 	log.Fatal(err)
+	// }
 
-	err = <-shutdown
-	if err != nil {
-		log.Fatal(err)
-	}
+	// err = <-shutdown
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	log.Println("Server gracefully stopped")
+	// log.Println("Server gracefully stopped")
 }

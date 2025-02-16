@@ -1,28 +1,21 @@
 package kp
 
-import "time"
+import "context"
 
 type IContext interface {
-	Log(message string)
+	Context() context.Context
+
+	Log() ILogger
 	Param(name string) string
 	Query(name string) string
 	ReadInput(data any) error
-	Response(responseCode int, responseData any) error
+	Response(code int, data any) error
 
-	SendMessage(topic string, message any, opts ...OptionProducerMessage) (RecordMetadata, error)
+	SendMessage(topic string, payload any, opts ...OptionProducerMsg) (RecordMetadata, error)
 }
 
-type HandleFunc func(ctx IContext)
+type HandleFunc func(ctx IContext) error
 
 type ServiceHandleFunc HandleFunc
 
 type Middleware func(HandleFunc) HandleFunc
-
-type OptionProducerMessage struct {
-	key       string
-	headers   []map[string]string
-	Timestamp time.Time
-	Metadata  any
-	Offset    int64
-	Partition int32
-}

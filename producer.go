@@ -18,26 +18,25 @@ type RecordMetadata struct {
 	LogStartOffset string `json:"logStartOffset,omitempty"`
 }
 
-func newProducer(brokers []string) sarama.SyncProducer {
+func newProducer(option *KafkaConfig) (sarama.SyncProducer, error) {
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true
 	config.Producer.Return.Errors = true
-	config.Version = sarama.V2_5_0_0 // Set to Kafka version used
+	config.Version = sarama.V2_5_0_0
 
-	// config.Admin.Retry.Max = 5
-
-	producer, err := sarama.NewSyncProducer(brokers, config)
-	if err != nil {
-		return nil
+	if option.Username != "" && option.Password != "" {
+		config.Net.SASL.Enable = true
+		config.Net.SASL.User = option.Username
+		config.Net.SASL.Password = option.Password
 	}
 
-	return producer
+	return sarama.NewSyncProducer(option.Brokers, config)
 }
 
-func producer(producer sarama.SyncProducer, topic string, message any, opts ...OptionProducerMessage) (RecordMetadata, error) {
+func producer(producer sarama.SyncProducer, topic string, payload any, opts ...OptionProducerMsg) (RecordMetadata, error) {
 	timestamp := time.Now()
 
-	data, err := json.Marshal(message)
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return RecordMetadata{}, err
 	}
@@ -100,5 +99,4 @@ func producer(producer sarama.SyncProducer, topic string, message any, opts ...O
 	}
 
 	return recordMetadata, nil
-
 }
